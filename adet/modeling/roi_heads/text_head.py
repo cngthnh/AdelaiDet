@@ -1,5 +1,5 @@
 import math
-
+import operator
 from typing import Dict, List
 import torch
 from torch import nn
@@ -11,6 +11,123 @@ from detectron2.modeling import ROI_HEADS_REGISTRY
 from adet.layers import conv_with_kaiming_uniform
 from ..poolers import TopPooler
 from .attn_predictor import ATTPredictor
+from dict_trie import Trie	
+from editdistance import eval
+CTLABELS = [	
+    " ",	
+    "!",	
+    '"',	
+    "#",	
+    "$",	
+    "%",	
+    "&",	
+    "'",	
+    "(",	
+    ")",	
+    "*",	
+    "+",	
+    ",",	
+    "-",	
+    ".",	
+    "/",	
+    "0",	
+    "1",	
+    "2",	
+    "3",	
+    "4",	
+    "5",	
+    "6",	
+    "7",	
+    "8",	
+    "9",	
+    ":",	
+    ";",	
+    "<",	
+    "=",	
+    ">",	
+    "?",	
+    "@",	
+    "A",	
+    "B",	
+    "C",	
+    "D",	
+    "E",	
+    "F",	
+    "G",	
+    "H",	
+    "I",	
+    "J",	
+    "K",	
+    "L",	
+    "M",	
+    "N",	
+    "O",	
+    "P",	
+    "Q",	
+    "R",	
+    "S",	
+    "T",	
+    "U",	
+    "V",	
+    "W",	
+    "X",	
+    "Y",	
+    "Z",	
+    "[",	
+    "\\",	
+    "]",	
+    "^",	
+    "_",	
+    "`",	
+    "a",	
+    "b",	
+    "c",	
+    "d",	
+    "e",	
+    "f",	
+    "g",	
+    "h",	
+    "i",	
+    "j",	
+    "k",	
+    "l",	
+    "m",	
+    "n",	
+    "o",	
+    "p",	
+    "q",	
+    "r",	
+    "s",	
+    "t",	
+    "u",	
+    "v",	
+    "w",	
+    "x",	
+    "y",	
+    "z",	
+    "{",	
+    "|",	
+    "}",	
+    "~",	
+    "ˋ",	
+    "ˊ",	
+    "﹒",	
+    "ˀ",	
+    "˜",	
+    "ˇ",	
+    "ˆ",	
+    "˒",	
+    "‑",	
+]	
+def decode(rec):	
+    s = ""	
+    for c in rec:	
+        c = int(c)	
+        if c < 104:	
+            s += CTLABELS[c]	
+        # elif c == 104:	
+        #     s += u'口'	
+    return s
 
 
 class SeqConvs(nn.Module):
@@ -173,6 +290,8 @@ class TextHead(nn.Module):
             self.mask_head = MaskHead(cfg)
         
         self.recognizer = build_recognizer(cfg, recognizer)
+        self.dictionary = open("vn_dictionary.txt").read().replace("\n\n", "\n").split("\n")	
+        self.trie = Trie(self.dictionary)
 
     def forward(self, images, features, proposals, targets=None):
         """
@@ -203,6 +322,53 @@ class TextHead(nn.Module):
                 for ix in range(len(beziers)):
                     cat_beziers.append(cat((beziers[ix], beziers2[ix]), dim=0))
                 beziers = cat_beziers
+                
+            for target in targets:	
+                rec = target.cpu().detach().numpy()	
+                rec = decode(rec)	
+                # candidates = {}	
+                # candidates[rec] = 0	
+                # for word in self.dictionary:	
+                #     candidates[word] = eval(rec, word)	
+                # candidates = sorted(candidates.items(), key=operator.itemgetter(1))[:10]	
+                candidates_list = list(self.trie.all_levenshtein(rec, 1))	
+                candidates_list.append(rec)	
+                candidates_list = list(set(candidates_list))	
+                candidates = {}	
+                for candidate in candidates_list:	
+                    candidates[candidate] = eval(rec, candidate)	
+                candidates = sorted(candidates.items(), key=operator.itemgetter(1))	
+                dist_sharp = eval("###", rec)	
+                while len(candidates) < 10:	
+                    candidates.append(("###", dist_sharp))	
+                candidates = candidates[:10]	
+                candidates_encoded = []	
+                distance_can = []	
+                for can in candidates:	
+                    word = []	
+                    # print(can[0])	
+                    for char in can[0]:	
+                        word.append(CTLABELS.index(char))	
+                    while len(word) < 25:	
+                        word.append(104)	
+                    word = word[:25]	
+                    candidates_encoded.append(word)	
+                    distance_can.append(1 / (can[1] + 0.1))	
+                # distance_can = softmax(distance_can)	
+                distance_candidates.append(distance_can)	
+                target_candidates.append(candidates_encoded)	
+            distance_candidates = torch.Tensor(distance_candidates).to(device="cuda")	
+            # distance_candidates = torch.sum(distance_candidates, dim=0)	
+            # distance_candidates = nn.functional.log_softmax(distance_candidates, dim=0)	
+            target_candidates = torch.Tensor(target_candidates).to(device="cuda")	
+            # distance_candidates = torch.Tensor(distance_candidates).to(device='cuda')	
+            targets = target_candidates	
+            targets = targets.permute((1, 0, 2))	
+            targets = {"targets": targets, "scores": distance_candidates}	
+            # for e in targets:	
+            #     for e1 in e:	
+            #         print(decode(e1))	
+            #     print()
         else:
             beziers = [p.top_feat for p in proposals]
         bezier_features = self.pooler(features, beziers)
