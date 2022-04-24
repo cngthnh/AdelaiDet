@@ -51,7 +51,7 @@ class TextEvaluator():
         else:
             with open(self.use_customer_dictionary, 'rb') as fp:
                 self.CTLABELS = pickle.load(fp)
-        assert(int(self.voc_size - 1) == len(self.CTLABELS)), "voc_size is not matched dictionary size, got {} and {}.".format(int(self.voc_size - 1), len(self.CTLABELS))
+        assert(int(self.voc_size - 1) == len(CTLABELS)), "voc_size is not matched dictionary size, got {} and {}.".format(int(self.voc_size - 1), len(CTLABELS))
 
         json_file = PathManager.get_local_path(self._metadata.json_file)
         with contextlib.redirect_stdout(io.StringIO()):
@@ -71,6 +71,9 @@ class TextEvaluator():
             self._text_eval_gt_path = "datasets/evaluation/gt_icdar2015.zip"
             self._word_spotting = False
             self.dataset_name = "icdar2015"
+        elif "vintext" in dataset_name:	
+            self._text_eval_gt_path = "datasets/evaluation/gt_vintext.zip"	
+            self._word_spotting = True
         elif "custom" in dataset_name:
             self._text_eval_gt_path = "datasets/evaluation/gt_custom.zip"
             self._word_spotting = False
@@ -92,7 +95,8 @@ class TextEvaluator():
             return all(a)
 
         def de_ascii(s):
-            a = [c for c in s if ord(c) < 128]
+            #a = [c for c in s if ord(c) < 128]
+            a = [c for c in s]
             outa = ''
             for i in a:
                 outa +=i
@@ -110,8 +114,8 @@ class TextEvaluator():
                         ymax = 0
                         for i in range(len(data[ix]['polys'])):
                             outstr = outstr + str(int(data[ix]['polys'][i][0])) +','+str(int(data[ix]['polys'][i][1])) +','
-                        # ass = de_ascii(data[ix]['rec'])
-                        ass = str(data[ix]['rec'])
+                        ass = de_ascii(data[ix]['rec'])
+                        #ass = str(data[ix]['rec'])
                         if len(ass)>=0: # 
                             outstr = outstr + str(round(data[ix]['score'], 3)) +',####'+ass+'\n'	
                             f2.writelines(outstr)
@@ -402,6 +406,7 @@ class TextEvaluator():
             if 'icdar2015'  in inputs['file_name']:
                 poly = polygon2rbox(poly, height, width)
             s = self.decode(rec)
+            s = decoder(s)
             result = {
                 "image_id": img_id,
                 "category_id": 1,
@@ -434,10 +439,10 @@ class TextEvaluator():
             if c < self.voc_size - 1:
                 if last_char != c:
                     if self.voc_size == 96:
-                        s += self.CTLABELS[c]
+                        s += CTLABELS[c]
                         last_char = c
                     else:
-                        s += str(chr(self.CTLABELS[c]))
+                        s += str(chr(CTLABELS[c]))
                         last_char = c
             elif c == self.voc_size -1:
                 s += u'口'
@@ -452,13 +457,84 @@ class TextEvaluator():
             c = int(c)
             if c < self.voc_size - 1:
                 if self.voc_size ==96:
-                    s += self.CTLABELS[c]
+                    s += CTLABELS[c]
                 else:
-                    s += str(chr(self.CTLABELS[c]))
+                    s += str(chr(CTLABELS[c]))
             elif c == self.voc_size -1:
                 s += u'口'
         return s
-            
+
+def correct_dict(s, dict_path):	
+    data = open(dict_path).read().split("\n")	
+    res = ""	
+    min_dist = 100	
+    for word in data:	
+        if editdistance.eval(word.lower(), s.lower()) < min_dist:	
+            res = word	
+            min_dist = editdistance.eval(word.lower(), s.lower())	
+    # print(res, min_dist, s)	
+    if min_dist < 2:	
+        s = res	
+    return s	
+def correct_strong(s, img_id):	
+    data = open("./strong_dict/gt_" + str(img_id) + ".txt").read().split("\n")	
+    res = ""	
+    min_dist = 100	
+    for word in data:	
+        if editdistance.eval(word.lower(), s.lower()) < min_dist:	
+            res = word	
+            min_dist = editdistance.eval(word.lower(), s.lower())	
+    # print(res, min_dist, s)	
+    if min_dist < 2:	
+        s = res	
+    return res	
+dictionary = "aàáạảãâầấậẩẫăằắặẳẵAÀÁẠẢÃĂẰẮẶẲẴÂẦẤẬẨẪeèéẹẻẽêềếệểễEÈÉẸẺẼÊỀẾỆỂỄoòóọỏõôồốộổỗơờớợởỡOÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠiìíịỉĩIÌÍỊỈĨuùúụủũưừứựửữƯỪỨỰỬỮUÙÚỤỦŨyỳýỵỷỹYỲÝỴỶỸ"	
+def make_groups():	
+    groups = []	
+    i = 0	
+    while i < len(dictionary) - 5:	
+        group = [c for c in dictionary[i : i + 6]]	
+        i += 6	
+        groups.append(group)	
+    return groups	
+groups = make_groups()	
+TONES = ["", "ˋ", "ˊ", "﹒", "ˀ", "˜"]	
+SOURCES = ["ă", "â", "Ă", "Â", "ê", "Ê", "ô", "ơ", "Ô", "Ơ", "ư", "Ư", "Đ", "đ"]	
+TARGETS = ["aˇ", "aˆ", "Aˇ", "Aˆ", "eˆ", "Eˆ", "oˆ", "o˒", "Oˆ", "O˒", "u˒", "U˒", "D-", "d-"]	
+def correct_tone_position(word):	
+    word = word[:-1]	
+    if len(word) < 2:	
+        pass	
+    first_ord_char = ""	
+    second_order_char = ""	
+    for char in word:	
+        for group in groups:	
+            if char in group:	
+                second_order_char = first_ord_char	
+                first_ord_char = group[0]	
+    if word[-1] == first_ord_char and second_order_char != "":	
+        pair_chars = ["qu", "Qu", "qU", "QU", "gi", "Gi", "gI", "GI"]	
+        for pair in pair_chars:	
+            if pair in word and second_order_char in ["u", "U", "i", "I"]:	
+                return first_ord_char	
+        return second_order_char	
+    return first_ord_char	
+def decoder(recognition):	
+    for char in TARGETS:	
+        recognition = recognition.replace(char, SOURCES[TARGETS.index(char)])	
+    if len(recognition) < 1:	
+        return recognition	
+    if recognition[-1] in TONES:	
+        if len(recognition) < 2:	
+            return recognition	
+        replace_char = correct_tone_position(recognition)	
+        tone = recognition[-1]	
+        recognition = recognition[:-1]	
+        for group in groups:	
+            if replace_char in group:	
+                recognition = recognition.replace(replace_char, group[TONES.index(tone)])	
+    return recognition
+
 def polygon2rbox(polygon, image_height, image_width):
     poly = np.array(polygon).reshape((-1, 2)).astype(np.float32)
     rect = cv2.minAreaRect(poly)
@@ -503,3 +579,112 @@ def get_tight_rect(points, start_x, start_y, image_height, image_width, scale):
     py3 = min(max(py3, 1), image_height - 1)
     py4 = min(max(py4, 1), image_height - 1)
     return [px1, py1, px2, py2, px3, py3, px4, py4]
+
+CTLABELS = [	
+    " ",	
+    "!",	
+    '"',	
+    "#",	
+    "$",	
+    "%",	
+    "&",	
+    "'",	
+    "(",	
+    ")",	
+    "*",	
+    "+",	
+    ",",	
+    "-",	
+    ".",	
+    "/",	
+    "0",	
+    "1",	
+    "2",	
+    "3",	
+    "4",	
+    "5",	
+    "6",	
+    "7",	
+    "8",	
+    "9",	
+    ":",	
+    ";",	
+    "<",	
+    "=",	
+    ">",	
+    "?",	
+    "@",	
+    "A",	
+    "B",	
+    "C",	
+    "D",	
+    "E",	
+    "F",	
+    "G",	
+    "H",	
+    "I",	
+    "J",	
+    "K",	
+    "L",	
+    "M",	
+    "N",	
+    "O",	
+    "P",	
+    "Q",	
+    "R",	
+    "S",	
+    "T",	
+    "U",	
+    "V",	
+    "W",	
+    "X",	
+    "Y",	
+    "Z",	
+    "[",	
+    "\\",	
+    "]",	
+    "^",	
+    "_",	
+    "`",	
+    "a",	
+    "b",	
+    "c",	
+    "d",	
+    "e",	
+    "f",	
+    "g",	
+    "h",	
+    "i",	
+    "j",	
+    "k",	
+    "l",	
+    "m",	
+    "n",	
+    "o",	
+    "p",	
+    "q",	
+    "r",	
+    "s",	
+    "t",	
+    "u",	
+    "v",	
+    "w",	
+    "x",	
+    "y",	
+    "z",	
+    "{",	
+    "|",	
+    "}",	
+    "~",	
+    "ˋ",	
+    "ˊ",	
+    "﹒",	
+    "ˀ",	
+    "˜",	
+    "ˇ",	
+    "ˆ",	
+    "˒",	
+    "‑",	
+]	
+# CTLABELS = [' ','!','"','#','$','%','&','\'','(',')','*','+',',','-','.','/','0','1','2','3','4','5','6','7','8','9',':',';','<','=','>','?','@','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','[','\\',']','^','_','`','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','{','|','}','~']	
+# CTLABELS = ['^', '\\', '}', 'ỵ', '>', '<', '{', '~', '`', '°', '$', 'ẽ', 'ỷ', 'ẳ', '_', 'ỡ', ';', '=', 'Ẳ', 'j', '[', ']', 'ẵ', '?', 'ẫ', 'Ẵ', 'ỳ', 'Ỡ', 'ẹ', 'è', 'z', 'ỹ', 'ằ', 'õ', 'ũ', 'Ẽ', 'ỗ', 'ỏ', '@', 'Ằ', 'Ỳ', 'Ẫ', 'ù', 'ử', '#', 'Ẹ', 'Z', 'Õ', 'ĩ', 'Ỏ', 'È', 'Ỷ', 'ý', 'Ũ', '*', 'ò', 'é', 'q', 'ở', 'ổ', 'ủ', 'ẩ', 'ã', 'ẻ', 'J', 'ữ', 'ễ', 'ặ', '+', 'ứ', 'Ỹ', 'ự', 'ụ', 'Ỗ', '%', 'ắ', 'ồ', '"', 'ề', 'ể', 'ỉ', 'ợ', '!', 'Ẻ', 'ừ', 'ọ', '&', 'ì', 'É', 'ậ', 'Ù', 'Ặ', 'x', 'Ỉ', 'ú', 'í', 'ó', 'Ẩ', 'ị', 'ế', 'Ứ', 'â', 'ấ', 'ầ', 'ớ', 'ă', 'Ủ', 'Ĩ', '(', 'Ắ', 'Ừ', ')', 'ờ', 'Ý', 'Ễ', 'Ã', 'ô', 'ộ', 'Ữ', 'Ợ', 'ả', 'Ở', 'ệ', 'W', 'ơ', 'Ổ', 'ố', 'Ề', 'f', 'Ử', 'ạ', 'w', 'Ò', 'Ự', 'Ụ', 'Ú', 'Ồ', 'ê', 'Ó', 'Ì', 'b', 'Í', 'Ể', 'đ', 'Ớ', '/', 'k', 'Ă', 'v', 'Ị', 'Ậ', 'Ọ', 'd', 'Ầ', 'Ấ', 'ư', 'á', 'Ế', ' ', 'p', 'Ơ', 'F', 'Ả', 'Ộ', 'Ê', 'Ờ', 's', '-', 'à', 'y', 'Ố', 'l', 'Â', 'Q', ',', 'X', 'Ệ', 'Ạ', 'Ô', 'r', ':', '6', '7', 'u', '4', 'm', '5', 'e', '8', 'c', 'Ư', 'Á', '9', 'D', '3', 'o', '.', 'Y', 'g', 'K', 'a', 'À', 't', '2', 'B', 'E', 'V', 'R', '1', 'S', 'i', 'L', 'P', 'Đ', 'h', 'U', '0', 'M', 'O', 'n', 'A', 'G', 'I', 'C', 'T', 'H', 'N']
