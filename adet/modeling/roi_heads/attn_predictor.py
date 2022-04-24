@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 from editdistance import eval
 import time
+from dict_trie import Trie
 
 from adet.layers import conv_with_kaiming_uniform
 
@@ -243,7 +244,7 @@ class ATTPredictor(nn.Module):
             targets = targets["targets"]	
             output = []	
             for i in range(targets.size()[0]):	
-                target_variable = targets
+                target_variable = targets[i]
                 _init = torch.zeros((rois.size()[1], 1)).long()
                 _init = torch.LongTensor(_init).to(rois.device)
                 target_variable = torch.cat((_init, target_variable.long()), 1)

@@ -309,6 +309,8 @@ class TextHead(nn.Module):
             features = mask_features
 
         if self.training:
+            target_candidates = []
+            distance_candidates = []
             beziers = [p.beziers for p in targets]
             if not self.aet:
                 targets = torch.cat([x.text for x in targets], dim=0)
