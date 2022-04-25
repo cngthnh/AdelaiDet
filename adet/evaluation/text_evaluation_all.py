@@ -168,6 +168,22 @@ class TextEvaluator():
                 for line in lexicon_fid.readlines():
                     line=line.strip()
                     lexicon.append(line)
+        elif "vintext" in self.dataset_name:
+            if not self.lexicon_type == None:
+                lexicon_path = 'datasets/vintext/weak_voc_new.txt'
+                lexicon_fid=open(lexicon_path, 'r')
+                pair_list = open('datasets/vintext/weak_voc_pair_list.txt', 'r')
+                pairs = dict()
+                for line in pair_list.readlines():
+                    line=line.strip()
+                    word = line.split(' ')[0].upper()
+                    word_gt = line[len(word)+1:]
+                    pairs[word] = word_gt
+                lexicon_fid=open(lexicon_path, 'r')
+                lexicon=[]
+                for line in lexicon_fid.readlines():
+                    line=line.strip()
+                    lexicon.append(line)
         elif "ctw1500" in self.dataset_name:
             if not self.lexicon_type == None:
                 lexicon_path = 'datasets/CTW1500/weak_voc_new.txt'
@@ -438,12 +454,8 @@ class TextEvaluator():
             c = int(c)
             if c < self.voc_size - 1:
                 if last_char != c:
-                    if self.voc_size == 96:
-                        s += CTLABELS[c]
-                        last_char = c
-                    else:
-                        s += str(chr(CTLABELS[c]))
-                        last_char = c
+                    s += CTLABELS[c]
+                    last_char = c
             elif c == self.voc_size -1:
                 s += u'口'
             else:
@@ -456,10 +468,7 @@ class TextEvaluator():
         for c in rec:
             c = int(c)
             if c < self.voc_size - 1:
-                if self.voc_size ==96:
-                    s += CTLABELS[c]
-                else:
-                    s += str(chr(CTLABELS[c]))
+                s += CTLABELS[c]
             elif c == self.voc_size -1:
                 s += u'口'
         return s
