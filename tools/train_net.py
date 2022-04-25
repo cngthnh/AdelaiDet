@@ -224,6 +224,11 @@ def main(args):
 
 
 if __name__ == "__main__":
+    if torch.cuda.device_count() == 1:
+        import torch.distributed as dist
+        dist.init_process_group(backend='nccl', init_method='tcp://localhost:23456', rank=0, world_size=1)
+        print("Initialized process group")
+
     args = default_argument_parser().parse_args()
     print("Command Line Args:", args)
     launch(
