@@ -28,7 +28,8 @@ class Beziers:
         assert tensor.dim() == 2 and tensor.size(-1) == 16, tensor.size()
 
         self.tensor = tensor
-
+    def __len__(self):
+        return self.tensor.shape[0]
     def to(self, device: str) -> "Beziers":
         return Beziers(self.tensor.to(device))
 
